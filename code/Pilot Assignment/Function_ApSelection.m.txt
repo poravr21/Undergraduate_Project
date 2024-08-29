@@ -1,0 +1,121 @@
+function [A , beta] = Function_ApSelection(NUM_APs, NUM_USERS, AREA_KM, delta) 
+
+    h_BS        = 15; % Base station height in m
+    h_mobile    = 1.65; % Mobile height in m
+    frequency   = 1900; % Frequency in MHz
+    aL          = (1.1*log10(frequency)-0.7)*h_mobile-(1.56*log10(frequency)-0.8);
+    L           = 46.3+33.9*log10(frequency)-13.82*log10(h_BS)-aL;
+    d0          = 0.01;%km
+    d1          = 0.05;%km
+ 
+    %Uniform locations of M APs:
+
+    AP        = zeros(NUM_APs,2);
+    corner    = sqrt(NUM_APs);
+   % points    = (AREA_KM/10)*[sort(-randperm(4)) 0 sort(randperm(5))]-AREA_KM*(AREA_KM*5/10);    
+    points    = (AREA_KM/corner)*[sort(-randperm((corner/2)-1)) 0 sort(randperm(corner/2))]-AREA_KM*(AREA_KM/2);   
+    m         = 1;
+    for i = 1:corner 
+        for j = 1:corner
+                  AP(m,:) = [points(i) points(j)];
+                  m       = m+1;
+        end
+    end
+    AP = AP;
+
+    %Wrapped around (8 neighbor cells)
+    D1          = zeros(NUM_APs,2);
+    D1(:,1)     = D1(:,1)+ AREA_KM*ones(NUM_APs,1);
+    AP1         = AP+D1;  
+
+    D2          = zeros(NUM_APs,2);
+    D2(:,2)     = D2(:,2)+ AREA_KM*ones(NUM_APs,1);
+    AP2         = AP+D2;
+
+    D3          = zeros(NUM_APs,2);
+    D3(:,1)     = D3(:,1)- AREA_KM*ones(NUM_APs,1);
+    AP3         = AP+D3;
+
+    D4          = zeros(NUM_APs,2);
+    D4(:,2)     = D4(:,2)- AREA_KM*ones(NUM_APs,1);
+    AP4         = AP+D4;
+
+    D5          = zeros(NUM_APs,2);
+    D5(:,1)     = D5(:,1)+ AREA_KM*ones(NUM_APs,1);
+    D5(:,2)     = D5(:,2)- AREA_KM*ones(NUM_APs,1);
+    AP5         = AP+D5;
+
+    D6          = zeros(NUM_APs,2);
+    D6(:,1)     = D6(:,1)- AREA_KM*ones(NUM_APs,1);
+    D6(:,2)     = D6(:,2)+ AREA_KM*ones(NUM_APs,1);
+    AP6         = AP+D6;
+
+    D7          = zeros(NUM_APs,2);
+    D7          = D7+ AREA_KM*ones(NUM_APs,2);
+    AP7         = AP+D7;
+
+    D8          = zeros(NUM_APs,2);
+    D8          = D8- AREA_KM*ones(NUM_APs,2);
+    AP8         = AP+D8;
+
+
+
+    %%Randomly locations of K terminals:
+
+    Ter         = unifrnd(-AREA_KM/2,AREA_KM/2,NUM_USERS,2);
+    UEpositions = ((Ter(:,1)+AREA_KM/2)+1i*(Ter(:,2)+AREA_KM/2)) * 1000;
+    sigma_shd   = 8; %in dB
+    dist_user   = zeros(NUM_USERS,NUM_USERS);
+    for t = 1:NUM_USERS
+        for ut = t:NUM_USERS
+            dist_user(t,ut) = norm(Ter(t,:)-Ter(ut,:));
+        end
+    end
+
+    %%Create an MxK large-scale coefficients beta_mk
+
+    BETAA = zeros(NUM_APs,NUM_USERS);
+    dist  = zeros(NUM_APs,NUM_USERS);
+    for m = 1:NUM_APs
+        for k = 1:NUM_USERS
+            [dist(m,k),~] = min([norm(AP(m,:)-Ter(k,:)), norm(AP1(m,:)-Ter(k,:)),norm(AP2(m,:)-Ter(k,:)),norm(AP3(m,:)-Ter(k,:)),norm(AP4(m,:)-Ter(k,:)),norm(AP5(m,:)-Ter(k,:)),norm(AP6(m,:)-Ter(k,:)),norm(AP7(m,:)-Ter(k,:)),norm(AP8(m,:)-Ter(k,:)) ]); %distance between Terminal k and AP m
+
+            if dist(m,k)<d0
+                betadB      = -L - 35*log10(d1) + 20*log10(d1) - 20*log10(d0);
+            elseif ((dist(m,k)>=d0) && (dist(m,k)<=d1))
+                betadB      = -L - 35*log10(d1) + 20*log10(d1) - 20*log10(dist(m,k));
+            else
+                betadB      = -L - 35*log10(dist(m,k)) + sigma_shd*randn(1,1); %large-scale in dB
+            end
+            BETAA(m,k)      = 10^(betadB/10);
+
+        end
+    end
+
+    beta = BETAA;
+
+    %%Access point Selection matix
+    
+    A       = zeros(NUM_APs,NUM_USERS);
+    %delta   = 0.94;
+    [beta_sort, beta_index] = sort(beta,1,'descend');
+    for k = 1:NUM_USERS
+
+        denom_ApSel = sum(beta(:,k));
+        c           = 0;
+        temp_ApSel  = 0;
+        for m=1:NUM_APs
+
+            temp_ApSel  = temp_ApSel + beta_sort(m,k);
+            c           = c+1;
+            if temp_ApSel >= delta*denom_ApSel
+                break;
+            end
+            A(beta_index(c,k),k) = 1;
+        end
+        A(beta_index(c,k),k) = 1;
+    end
+    A;
+
+
+end
